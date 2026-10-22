@@ -1,0 +1,15 @@
+@host = http://localhost:5233
+
+GET {{host}}/health/db
+
+###
+
+GET {{host}}/api/statuses/Campaign?lang=ar
+
+###
+
+GET {{host}}/api/platforms?lang=en
+
+###
+
+GET {{host}}/api/platforms/detect?url=https://www.instagram.com/rival_cafe/?igshid=abc
