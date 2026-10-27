@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local uploads and encrypted secrets (development storage)
+App_Data/

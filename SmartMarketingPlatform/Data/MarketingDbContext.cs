@@ -65,6 +65,23 @@ public class MarketingDbContext : DbContext
     public DbSet<RecommendationEvidence> RecommendationEvidence => Set<RecommendationEvidence>();
     public DbSet<UsageEvent> UsageEvents => Set<UsageEvent>();
 
+    // UpdatedAt is set here for every modified row, so no service can forget it.
+    // (On insert it is filled by the SYSDATETIMEOFFSET() default.)
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State == EntityState.Modified
+                && entry.Metadata.FindProperty("UpdatedAt")?.ClrType == typeof(DateTimeOffset))
+            {
+                entry.Property("UpdatedAt").CurrentValue = now;
+            }
+        }
+
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -27,3 +27,11 @@ public sealed class NotFoundException(string message)
 // 409: the request conflicts with the current state (duplicate, wrong status for this action).
 public sealed class ConflictException(string message)
     : AppException(StatusCodes.Status409Conflict, "Conflict", message);
+
+// 413: the uploaded file is bigger than allowed for its kind.
+public sealed class PayloadTooLargeException(string message)
+    : AppException(StatusCodes.Status413PayloadTooLarge, "Payload too large", message);
+
+// 415: the uploaded file's real type (detected from its bytes) is not accepted.
+public sealed class UnsupportedMediaTypeException(string message)
+    : AppException(StatusCodes.Status415UnsupportedMediaType, "Unsupported media type", message);

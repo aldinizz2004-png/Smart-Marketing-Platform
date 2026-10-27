@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using SmartMarketingPlatform.Common.Businesses;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,8 @@ using SmartMarketingPlatform.Common.Auth;
 using SmartMarketingPlatform.Common.Errors;
 using SmartMarketingPlatform.Common.Health;
 using SmartMarketingPlatform.Common.Options;
+using SmartMarketingPlatform.Common.Secrets;
+using SmartMarketingPlatform.Common.Storage;
 using SmartMarketingPlatform.Common.Statuses;
 using SmartMarketingPlatform.Data;
 using SmartMarketingPlatform.Entities;
@@ -56,7 +59,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
     .AddPolicy(Policies.TenantOwner, p => p.RequireRole(nameof(MembershipRole.Owner)))
-    .AddPolicy(Policies.TenantAdmin, p => p.RequireRole(nameof(MembershipRole.Owner), nameof(MembershipRole.Admin)));
+    .AddPolicy(Policies.TenantAdmin, p => p.RequireRole(nameof(MembershipRole.Owner), nameof(MembershipRole.Admin)))
+    .AddPolicy(Policies.CanEdit, p => p.RequireRole(
+        nameof(MembershipRole.Owner), nameof(MembershipRole.Admin), nameof(MembershipRole.Editor)))
+    .AddPolicy(Policies.ActiveSubscription, p => p.RequireAuthenticatedUser().AddRequirements(new SubscriptionRequirement()));
+
+builder.Services.AddScoped<IAuthorizationHandler, SubscriptionRequirementHandler>();              // reads the DB per request
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ProblemDetailsAuthorizationResultHandler>();   // 402
 
 // ---- API: controllers, JSON, errors, docs -----------------------------------
 builder.Services.AddControllers()
@@ -106,6 +115,24 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<ITenantService, TenantService>();
+
+builder.Services.AddScoped<IBusinessAccess, BusinessAccess>();
+builder.Services.AddScoped<IBusinessService, BusinessService>();
+builder.Services.AddScoped<IBrandService, BrandService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<IOfferService, OfferService>();
+builder.Services.AddScoped<IAudienceSegmentService, AudienceSegmentService>();
+
+// Files and secrets: local implementations in development, cloud services later (same interfaces).
+builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
+builder.Services.AddDataProtection();
+builder.Services.AddSingleton<IFileStorage, LocalFileStorage>();
+builder.Services.AddSingleton<ISecretStore, LocalSecretStore>();
+
+builder.Services.AddScoped<IMediaService, MediaService>();
+builder.Services.AddScoped<IKnowledgeSourceService, KnowledgeSourceService>();
+builder.Services.AddScoped<ISocialAccountService, SocialAccountService>();
+builder.Services.AddScoped<IAutomationPolicyService, AutomationPolicyService>();
 
 var app = builder.Build();
 

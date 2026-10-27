@@ -4,7 +4,8 @@ namespace SmartMarketingPlatform.Common.Pagination;
 
 // Query parameters for every list endpoint: ?page=1&pageSize=20
 // Out-of-range values return 400 automatically ([ApiController] validation).
-public sealed class PageQuery
+// List endpoints with filters inherit from it (e.g. ProductListQuery adds ?search=).
+public class PageQuery
 {
     public const int MaxPageSize = 100;
 
