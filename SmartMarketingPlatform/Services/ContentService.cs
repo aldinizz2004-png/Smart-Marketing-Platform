@@ -28,6 +28,7 @@ public sealed class ContentService(
     IAiExecutionRunner aiRunner,
     IMarketingContextBuilder contextBuilder,
     IBrandGuard brandGuard,
+    IPublishingService publishing,
     TimeProvider clock) : IContentService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -182,6 +183,10 @@ public sealed class ContentService(
                 throw new ConflictException($"A {latest.Format} needs at least {min} media file(s) before it can be reviewed.");
         }
 
+        // Canceling scheduled content also cancels its waiting publication job.
+        if (target == StatusIds.ContentItem.Canceled && item.StatusId == StatusIds.ContentItem.Scheduled)
+            await publishing.CancelActiveJobsAsync(id, cancellationToken);
+
         item.StatusId = target;
         await db.SaveChangesAsync(cancellationToken);
         return await GetAsync(businessId, id, cancellationToken);
@@ -230,6 +235,11 @@ public sealed class ContentService(
         };
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // If the owner allows automation on this platform, approved content is scheduled at once.
+        if (decision == StatusIds.ContentReview.Approved)
+            await publishing.TryAutoScheduleAsync(businessId, id, cancellationToken);
+
         return await GetAsync(businessId, id, cancellationToken);
     }
 

@@ -14,6 +14,7 @@ using SmartMarketingPlatform.Common.Brand;
 using SmartMarketingPlatform.Common.Errors;
 using SmartMarketingPlatform.Common.Health;
 using SmartMarketingPlatform.Common.Options;
+using SmartMarketingPlatform.Common.Publishing;
 using SmartMarketingPlatform.Common.Secrets;
 using SmartMarketingPlatform.Common.Storage;
 using SmartMarketingPlatform.Common.Statuses;
@@ -21,6 +22,7 @@ using SmartMarketingPlatform.Data;
 using SmartMarketingPlatform.Entities;
 using SmartMarketingPlatform.Enums;
 using SmartMarketingPlatform.Services;
+using SmartMarketingPlatform.Workers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -149,6 +151,16 @@ builder.Services.AddScoped<IStrategyService, StrategyService>();
 builder.Services.AddScoped<IAiUsageService, AiUsageService>();
 builder.Services.AddScoped<IBrandGuard, BrandGuard>();
 builder.Services.AddScoped<IContentService, ContentService>();
+
+// Publishing: jobs are created by the API and executed by a background worker in the same process.
+builder.Services.Configure<PublishingOptions>(builder.Configuration.GetSection(PublishingOptions.SectionName));
+builder.Services.AddSingleton<ISocialPublisher, FakeSocialPublisher>();
+builder.Services.AddSingleton<IMetricsProvider, FakeMetricsProvider>();
+builder.Services.AddScoped<IPublishingService, PublishingService>();
+builder.Services.AddScoped<IPublicationProcessor, PublicationProcessor>();
+builder.Services.AddScoped<IPerformanceService, PerformanceService>();
+if (builder.Configuration.GetValue("Publishing:WorkerEnabled", true))
+    builder.Services.AddHostedService<PublishingWorker>();
 
 var app = builder.Build();
 
