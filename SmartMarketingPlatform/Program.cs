@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using SmartMarketingPlatform.Common.Ai;
 using SmartMarketingPlatform.Common.Auth;
 using SmartMarketingPlatform.Common.Errors;
 using SmartMarketingPlatform.Common.Health;
@@ -133,6 +134,16 @@ builder.Services.AddScoped<IMediaService, MediaService>();
 builder.Services.AddScoped<IKnowledgeSourceService, KnowledgeSourceService>();
 builder.Services.AddScoped<ISocialAccountService, SocialAccountService>();
 builder.Services.AddScoped<IAutomationPolicyService, AutomationPolicyService>();
+
+// AI: every call goes through IMarketingAi (Fake today) and is recorded by IAiExecutionRunner.
+builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.SectionName));
+builder.Services.AddSingleton<IMarketingAi, FakeMarketingAi>();
+builder.Services.AddScoped<IAiExecutionRunner, AiExecutionRunner>();
+builder.Services.AddScoped<IMarketingContextBuilder, MarketingContextBuilder>();
+
+builder.Services.AddScoped<ICampaignService, CampaignService>();
+builder.Services.AddScoped<IStrategyService, StrategyService>();
+builder.Services.AddScoped<IAiUsageService, AiUsageService>();
 
 var app = builder.Build();
 

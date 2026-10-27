@@ -35,3 +35,7 @@ public sealed class PayloadTooLargeException(string message)
 // 415: the uploaded file's real type (detected from its bytes) is not accepted.
 public sealed class UnsupportedMediaTypeException(string message)
     : AppException(StatusCodes.Status415UnsupportedMediaType, "Unsupported media type", message);
+
+// 502: a service we depend on (the AI provider) failed. The failure is recorded in AiExecutions.
+public sealed class BadGatewayException(string message)
+    : AppException(StatusCodes.Status502BadGateway, "Bad gateway", message);
