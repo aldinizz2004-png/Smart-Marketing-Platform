@@ -1,5 +1,20 @@
+using System.Text;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+using SmartMarketingPlatform.Common.Auth;
+using SmartMarketingPlatform.Common.Errors;
+using SmartMarketingPlatform.Common.Health;
+using SmartMarketingPlatform.Common.Options;
+using SmartMarketingPlatform.Common.Statuses;
 using SmartMarketingPlatform.Data;
+using SmartMarketingPlatform.Entities;
+using SmartMarketingPlatform.Enums;
 using SmartMarketingPlatform.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,68 +22,113 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("MarketingDb")
     ?? throw new InvalidOperationException("Connection string 'MarketingDb' was not found.");
 
-// Register the custom DbContext with SQL Server.
+// ---- Data -------------------------------------------------------------------
 builder.Services.AddDbContext<MarketingDbContext>(options => options.UseSqlServer(connectionString));
 
+// ---- Authentication (JWT) ---------------------------------------------------
+var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
+var jwt = jwtSection.Get<JwtOptions>() ?? throw new InvalidOperationException("The 'Jwt' configuration section is missing.");
+if (jwt.Key.Length < JwtOptions.MinKeyLength)
+    throw new InvalidOperationException(
+        $"Jwt:Key must be at least {JwtOptions.MinKeyLength} characters. Set it with the Jwt__Key environment variable.");
+builder.Services.Configure<JwtOptions>(jwtSection);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;   // keep "sub", "role", "tid" as they are
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwt.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwt.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+            NameClaimType = AppClaims.Name,
+            RoleClaimType = AppClaims.Role
+        };
+    });
+
+// Secure by default: every endpoint needs a valid token unless it says [AllowAnonymous].
+builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
+    .AddPolicy(Policies.TenantOwner, p => p.RequireRole(nameof(MembershipRole.Owner)))
+    .AddPolicy(Policies.TenantAdmin, p => p.RequireRole(nameof(MembershipRole.Owner), nameof(MembershipRole.Admin)));
+
+// ---- API: controllers, JSON, errors, docs -----------------------------------
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));   // enums as "Owner", not 0
+
+// Every error (validation, 401/403/404, exceptions) is returned as RFC 7807 ProblemDetails.
+builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
+{
+    context.ProblemDetails.Instance ??= $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}";
+    context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+});
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    // "Authorize" button in Swagger UI: paste the accessToken from /api/auth/login.
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Paste the accessToken returned by /api/auth/login."
+    });
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+    });
+});
+
+builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
+
+// ---- Application services ---------------------------------------------------
+builder.Services.Configure<SubscriptionPricingOptions>(builder.Configuration.GetSection(SubscriptionPricingOptions.SectionName));
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<TranslationService>();
+builder.Services.AddSingleton<StatusCatalog>();
+builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
+builder.Services.AddSingleton<ITokenService, JwtTokenService>();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
 builder.Services.AddScoped<PlatformDetector>();
-builder.Services.AddOpenApi();
+builder.Services.AddScoped<ILookupService, LookupService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAccountService, AccountService>();
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+builder.Services.AddScoped<ITenantService, TenantService>();
 
 var app = builder.Build();
 
+// ---- Pipeline (order matters) -----------------------------------------------
+app.UseExceptionHandler();      // first: catches exceptions from everything below
+app.UseStatusCodePages();       // empty 401/403/404/405 responses also get a ProblemDetails body
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
 
-// Is the database reachable and up to date?
-app.MapGet("/health/db", async (MarketingDbContext db) =>
-{
-    var canConnect = await db.Database.CanConnectAsync();
-    var pending = canConnect ? (await db.Database.GetPendingMigrationsAsync()).ToList() : new List<string>();
-    return Results.Ok(new { canConnect, pendingMigrations = pending });
-});
+app.UseAuthentication();        // who are you? (reads the Bearer token)
+app.UseAuthorization();         // are you allowed? (policies, roles)
 
-// Statuses of one entity, translated: /api/statuses/Campaign?lang=ar
-app.MapGet("/api/statuses/{category}", async (string category, string? lang, MarketingDbContext db, TranslationService t) =>
-{
-    var statuses = await db.Statuses.AsNoTracking()
-        .Where(s => s.Category == category && s.IsActive)
-        .OrderBy(s => s.SortOrder)
-        .ToListAsync();
-
-    return Results.Ok(statuses.Select(s => new { s.Id, s.Code, s.TranslationKey, Text = t.Translate(s.TranslationKey, lang) }));
-});
-
-// Platforms with translated names: /api/platforms?lang=ar
-app.MapGet("/api/platforms", async (string? lang, MarketingDbContext db, TranslationService t) =>
-{
-    var platforms = await db.Platforms.AsNoTracking().Where(p => p.IsActive).ToListAsync();
-
-    return Results.Ok(platforms.Select(p => new
-    {
-        p.Code,
-        p.DisplayNameKey,
-        DisplayName = t.Translate(p.DisplayNameKey, lang),
-        p.SupportsPublishing,
-        p.SupportsCompetitorTracking
-    }));
-});
-
-// Paste any competitor URL and see how it will be tracked:
-// /api/platforms/detect?url=https://www.instagram.com/rival_cafe/
-app.MapGet("/api/platforms/detect", async (string url, PlatformDetector detector) =>
-{
-    try
-    {
-        return Results.Ok(await detector.DetectAsync(url));
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-});
+app.MapControllers();
+app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = HealthResponseWriter.WriteAsync })
+   .AllowAnonymous();
 
 app.Run();
+
+// Lets the integration test project start the API (WebApplicationFactory<Program>).
+public partial class Program;

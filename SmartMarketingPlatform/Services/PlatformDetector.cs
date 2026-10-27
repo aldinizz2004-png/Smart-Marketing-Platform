@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using SmartMarketingPlatform.Common.Errors;
 using SmartMarketingPlatform.Data;
+using SmartMarketingPlatform.DTOs.Lookups;
 
 namespace SmartMarketingPlatform.Services;
 
@@ -25,9 +27,10 @@ public class PlatformDetector
         var withScheme = rawUrl.Contains("://", StringComparison.Ordinal) ? rawUrl.Trim() : "https://" + rawUrl.Trim();
 
         if (!Uri.TryCreate(withScheme, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || !uri.Host.Contains('.'))
         {
-            throw new ArgumentException("Not a valid http(s) URL.", nameof(rawUrl));
+            throw new BadRequestException("Not a valid http(s) URL.");
         }
 
         var host = uri.Host.ToLowerInvariant();
@@ -60,5 +63,3 @@ public class PlatformDetector
         return new DetectedUrl(rawUrl, normalized, host, platformCode, string.IsNullOrEmpty(handle) ? null : handle);
     }
 }
-
-public record DetectedUrl(string Url, string NormalizedUrl, string Host, string PlatformCode, string? Handle);

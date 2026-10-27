@@ -843,3 +843,12 @@ VALUES (N'20261022114420_InitialCreate', N'10.0.12');
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+ALTER TABLE [AppUsers] ADD [PasswordHash] nvarchar(500) NULL;
+
+INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261027090456_AddUserPasswordHash', N'10.0.12');
+
+COMMIT;
+GO
+
