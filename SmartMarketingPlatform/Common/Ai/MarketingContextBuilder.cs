@@ -23,6 +23,7 @@ public sealed class MarketingContextBuilder(MarketingDbContext db, TimeProvider 
 
         var campaign = campaignId is null ? null : await db.Campaigns.AsNoTracking()
             .Include(c => c.CampaignProducts).Include(c => c.CampaignOffers).Include(c => c.CampaignAudiences)
+            .AsSplitQuery()
             .FirstAsync(c => c.Id == campaignId, cancellationToken);
 
         // A campaign uses what it selected; with nothing selected, the business's current catalogue.

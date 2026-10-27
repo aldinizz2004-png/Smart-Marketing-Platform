@@ -133,6 +133,81 @@ public sealed class FakeMarketingAi(IOptions<AiOptions> options) : IMarketingAi
         return Task.FromResult(Result<IReadOnlyList<RecommendationDraft>>(context, drafts));
     }
 
+    public Task<AiCallResult<ContentDraft>> WriteContentAsync(MarketingContext context, ContentBrief brief, CancellationToken cancellationToken)
+    {
+        ThrowIfAskedToFail(context);
+
+        var format = brief.Format ?? DefaultFormat(brief.ContentType);
+        var hook = brief.Hook ?? (brief.Offer is not null ? HookType.Offer : HookType.Question);
+        var cta = CtaFor(context.Campaign?.Objective);
+        var arabic = context.Dialect is null || context.Dialect.Contains("Arabic", StringComparison.OrdinalIgnoreCase);
+        var emoji = context.EmojiLevel > 0;
+        var shorter = brief.Instructions?.Contains("short", StringComparison.OrdinalIgnoreCase) == true;
+
+        var subject = brief.Product?.Name ?? context.BusinessName;
+        var lines = new List<string>();
+        if (arabic)
+        {
+            lines.Add(hook == HookType.Offer && brief.Offer is not null
+                ? $"{brief.Offer.Title}{(emoji ? " 🎉" : "")}"
+                : $"جربت {subject} عنا؟{(emoji ? " ☕" : "")}");
+            if (brief.Product is not null && !shorter) lines.Add($"{brief.Product.Name} بـ {brief.Product.Price} {brief.Product.Currency} بس.");
+            if (brief.Offer is not null && hook != HookType.Offer) lines.Add($"والعرض: {brief.Offer.Title}");
+            if (!shorter) lines.Add($"{context.BusinessName}{(context.City is null ? "" : " - " + context.City)}");
+            lines.Add(CtaTextAr(cta) + (emoji ? " 👇" : ""));
+        }
+        else
+        {
+            lines.Add(hook == HookType.Offer && brief.Offer is not null ? brief.Offer.Title : $"Have you tried our {subject}?");
+            if (brief.Product is not null && !shorter) lines.Add($"{brief.Product.Name} for only {brief.Product.Price} {brief.Product.Currency}.");
+            if (!shorter) lines.Add(context.BusinessName);
+            lines.Add(cta.ToString());
+        }
+
+        var draft = new ContentDraft(
+            string.Join("\n", lines),
+            format,
+            hook,
+            cta,
+            brief.Offer is not null,
+            new JsonObject
+            {
+                ["visualIdea"] = brief.Product is null ? $"Bright photo inside {context.BusinessName}" : $"Close-up of {brief.Product.Name} in natural light",
+                ["hashtags"] = new JsonArray($"#{context.City ?? "local"}", $"#{context.Category}"),
+                ["language"] = arabic ? "ar" : "en",
+                ["basedOnRevision"] = brief.PreviousBody is not null
+            });
+
+        return Task.FromResult(Result(context, draft));
+    }
+
+    private static ContentFormat DefaultFormat(ContentType type) => type switch
+    {
+        ContentType.Reel => ContentFormat.Reel,
+        ContentType.Story => ContentFormat.Story,
+        ContentType.Short => ContentFormat.Video,
+        ContentType.Post => ContentFormat.SingleImage,
+        _ => ContentFormat.Text
+    };
+
+    private static CallToAction CtaFor(CampaignObjective? objective) => objective switch
+    {
+        CampaignObjective.Orders or CampaignObjective.ProductPromotion => CallToAction.OrderNow,
+        CampaignObjective.Messages => CallToAction.SendMessage,
+        CampaignObjective.Visits => CallToAction.VisitStore,
+        CampaignObjective.Followers => CallToAction.Follow,
+        _ => CallToAction.LearnMore
+    };
+
+    private static string CtaTextAr(CallToAction cta) => cta switch
+    {
+        CallToAction.OrderNow => "اطلب هلأ",
+        CallToAction.SendMessage => "ابعتلنا رسالة",
+        CallToAction.VisitStore => "زورنا اليوم",
+        CallToAction.Follow => "تابعنا",
+        _ => "اعرف أكثر"
+    };
+
     // 19:00 local time, moved inside the owner's publish window when one is set.
     private static TimeOnly BestTime(MarketingContext context)
     {

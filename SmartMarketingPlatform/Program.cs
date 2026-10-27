@@ -10,6 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using SmartMarketingPlatform.Common.Ai;
 using SmartMarketingPlatform.Common.Auth;
+using SmartMarketingPlatform.Common.Brand;
 using SmartMarketingPlatform.Common.Errors;
 using SmartMarketingPlatform.Common.Health;
 using SmartMarketingPlatform.Common.Options;
@@ -63,6 +64,8 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy(Policies.TenantAdmin, p => p.RequireRole(nameof(MembershipRole.Owner), nameof(MembershipRole.Admin)))
     .AddPolicy(Policies.CanEdit, p => p.RequireRole(
         nameof(MembershipRole.Owner), nameof(MembershipRole.Admin), nameof(MembershipRole.Editor)))
+    .AddPolicy(Policies.CanReview, p => p.RequireRole(
+        nameof(MembershipRole.Owner), nameof(MembershipRole.Admin), nameof(MembershipRole.Reviewer)))
     .AddPolicy(Policies.ActiveSubscription, p => p.RequireAuthenticatedUser().AddRequirements(new SubscriptionRequirement()));
 
 builder.Services.AddScoped<IAuthorizationHandler, SubscriptionRequirementHandler>();              // reads the DB per request
@@ -144,6 +147,8 @@ builder.Services.AddScoped<IMarketingContextBuilder, MarketingContextBuilder>();
 builder.Services.AddScoped<ICampaignService, CampaignService>();
 builder.Services.AddScoped<IStrategyService, StrategyService>();
 builder.Services.AddScoped<IAiUsageService, AiUsageService>();
+builder.Services.AddScoped<IBrandGuard, BrandGuard>();
+builder.Services.AddScoped<IContentService, ContentService>();
 
 var app = builder.Build();
 

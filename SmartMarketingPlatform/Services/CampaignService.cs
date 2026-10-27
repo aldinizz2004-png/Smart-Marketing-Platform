@@ -259,7 +259,8 @@ public sealed class CampaignService(
     }
 
     private IQueryable<Campaign> WithLinks() =>
-        db.Campaigns.Include(c => c.CampaignProducts).Include(c => c.CampaignOffers).Include(c => c.CampaignAudiences);
+        db.Campaigns.Include(c => c.CampaignProducts).Include(c => c.CampaignOffers).Include(c => c.CampaignAudiences)
+            .AsSplitQuery();   // three collections: one SQL query each, instead of one query that multiplies rows
 
     private async Task<Campaign> LoadAsync(Guid businessId, Guid id, CancellationToken cancellationToken) =>
         await WithLinks().FirstOrDefaultAsync(c => c.Id == id && c.BusinessId == businessId, cancellationToken)

@@ -93,6 +93,7 @@ public sealed class AutomationPolicyService(
         db.AutomationPolicies
             .Include(p => p.AllowedPlatforms)
             .Include(p => p.AutoApplyRules)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.BusinessId == businessId, cancellationToken);
 
     // Never configured = automation off: nothing is published without the owner.

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using SmartMarketingPlatform.Common.Auth;
 using SmartMarketingPlatform.Common.Pagination;
 using SmartMarketingPlatform.DTOs.Common;
+using SmartMarketingPlatform.DTOs.Content;
 using SmartMarketingPlatform.DTOs.Strategy;
 using SmartMarketingPlatform.Services;
 
@@ -14,7 +15,7 @@ namespace SmartMarketingPlatform.Controllers;
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status402PaymentRequired)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
-public class RecommendationsController(IStrategyService strategy) : ControllerBase
+public class RecommendationsController(IStrategyService strategy, IContentService content) : ControllerBase
 {
     // GET .../recommendations?status=Pending  -> the owner's "inbox"
     [HttpGet]
@@ -37,4 +38,19 @@ public class RecommendationsController(IStrategyService strategy) : ControllerBa
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<RecommendationResponse>> Decide(Guid businessId, Guid id, ChangeStatusRequest request, CancellationToken cancellationToken)
         => Ok(await strategy.DecideAsync(businessId, id, request, cancellationToken));
+
+    // POST .../recommendations/{id}/apply -> an accepted NewContent recommendation becomes a content item
+    // written by the AI (201, Location = the new content item). The recommendation becomes Applied.
+    [HttpPost("{id}/apply")]
+    [Authorize(Policy = Policies.CanEdit)]
+    [ProducesResponseType<ContentItemResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<ContentItemResponse>> Apply(Guid businessId, Guid id, ApplyRecommendationRequest? request, CancellationToken cancellationToken)
+    {
+        var item = await content.ApplyRecommendationAsync(businessId, id, request ?? new ApplyRecommendationRequest(), cancellationToken);
+        return Created($"/api/businesses/{businessId}/content-items/{item.Id}", item);
+    }
 }
