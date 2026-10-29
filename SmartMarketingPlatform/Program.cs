@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using SmartMarketingPlatform.Common.Businesses;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
@@ -131,7 +132,13 @@ builder.Services.AddScoped<IAudienceSegmentService, AudienceSegmentService>();
 
 // Files and secrets: local implementations in development, cloud services later (same interfaces).
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
-builder.Services.AddDataProtection();
+// Data Protection keys encrypt the social-media tokens. In Docker they are kept in a volume
+// (DataProtection__KeysPath); otherwise a restarted container would get new keys and could
+// no longer read the tokens it saved before.
+var dataProtection = builder.Services.AddDataProtection();
+var keysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(keysPath))
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(keysPath)).SetApplicationName("SmartMarketingPlatform");
 builder.Services.AddSingleton<IFileStorage, LocalFileStorage>();
 builder.Services.AddSingleton<ISecretStore, LocalSecretStore>();
 
@@ -168,13 +175,17 @@ var app = builder.Build();
 app.UseExceptionHandler();      // first: catches exceptions from everything below
 app.UseStatusCodePages();       // empty 401/403/404/405 responses also get a ProblemDetails body
 
-if (app.Environment.IsDevelopment())
+// Swagger: always in Development; elsewhere only when Swagger__Enabled=true (e.g. the Docker demo).
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// Inside a container the app listens on plain HTTP (8080); TLS belongs to the reverse proxy in front of it.
+// The official .NET images set DOTNET_RUNNING_IN_CONTAINER=true.
+if (!app.Configuration.GetValue<bool>("DOTNET_RUNNING_IN_CONTAINER"))
+    app.UseHttpsRedirection();
 
 app.UseAuthentication();        // who are you? (reads the Bearer token)
 app.UseAuthorization();         // are you allowed? (policies, roles)
@@ -182,6 +193,9 @@ app.UseAuthorization();         // are you allowed? (policies, roles)
 app.MapControllers();
 app.MapHealthChecks("/health", new HealthCheckOptions { ResponseWriter = HealthResponseWriter.WriteAsync })
    .AllowAnonymous();
+
+// Docker: apply the existing migrations before the API and the publishing worker start.
+await DatabaseMigrator.ApplyMigrationsAsync(app);
 
 app.Run();
 
