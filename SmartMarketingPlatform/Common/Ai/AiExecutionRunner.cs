@@ -33,7 +33,7 @@ public sealed class AiExecutionRunner(
         {
             BusinessId = businessId,
             TaskType = taskType,
-            ModelName = ai.ModelName,
+            ModelName = Truncate(ai.ModelName, 100),
             PromptVersion = ai.PromptVersion,
             StatusId = StatusIds.AiExecution.Running,
             InputSnapshotJson = JsonSerializer.Serialize(inputSnapshot, Json),
@@ -68,8 +68,16 @@ public sealed class AiExecutionRunner(
 
         // 2b) Success: tokens, cost and a usage event. Saved right away: the money was spent
         //     even if the caller fails afterwards. The idempotency key stops double counting.
-        var cost = result.InputTokens / 1_000_000m * options.Value.InputCostPer1MTokensUsd
+        var cost = result.CostUsd
+                   ?? result.InputTokens / 1_000_000m * options.Value.InputCostPer1MTokensUsd
                    + result.OutputTokens / 1_000_000m * options.Value.OutputCostPer1MTokensUsd;
+
+        // With a fallback chain, the model that really answered is known only now.
+        if (!string.IsNullOrWhiteSpace(result.ModelName))
+            execution.ModelName = Truncate(result.ModelName, 100);
+        // Not an error of this execution, but worth seeing: which models failed before this one answered.
+        if (result.FailedAttempts.Count > 0)
+            execution.ErrorMessage = Truncate("Answered after fallback. " + string.Join("; ", result.FailedAttempts), 2000);
 
         execution.StatusId = StatusIds.AiExecution.Succeeded;
         execution.OutputSnapshotJson = JsonSerializer.Serialize(result.Output, Json);

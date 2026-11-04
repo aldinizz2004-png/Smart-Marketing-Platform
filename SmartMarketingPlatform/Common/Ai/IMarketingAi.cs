@@ -3,8 +3,8 @@ using SmartMarketingPlatform.Enums;
 
 namespace SmartMarketingPlatform.Common.Ai;
 
-// The only door to the AI. Today: FakeMarketingAi. Later: a real provider (Gemini, OpenAI ...)
-// behind the same interface, chosen in configuration; no service changes.
+// The only door to the AI, chosen in configuration (Ai:Provider): FakeMarketingAi for tests and demos,
+// LlmMarketingAi for real models (Gemini, Groq ... with fallback). Services never know which one runs.
 public interface IMarketingAi
 {
     string ModelName { get; }
@@ -18,7 +18,16 @@ public interface IMarketingAi
     Task<AiCallResult<ContentDraft>> WriteContentAsync(MarketingContext context, ContentBrief brief, CancellationToken cancellationToken);
 }
 
-public sealed record AiCallResult<T>(T Output, int InputTokens, int OutputTokens);
+public sealed record AiCallResult<T>(T Output, int InputTokens, int OutputTokens)
+{
+    // Set by real providers: the model that actually answered (after any fallback) and its real cost.
+    // When null, the runner uses IMarketingAi.ModelName and the prices in Ai options.
+    public string? ModelName { get; init; }
+    public decimal? CostUsd { get; init; }
+
+    // Models that failed before the one that answered, e.g. "Gemini/gemini-3.6-flash: rate_limited".
+    public IReadOnlyList<string> FailedAttempts { get; init; } = [];
+}
 
 public sealed record RecommendationDraft(
     RecommendationAction ActionType,

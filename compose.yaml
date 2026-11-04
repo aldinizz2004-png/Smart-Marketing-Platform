@@ -41,6 +41,10 @@ services:
       Database__ApplyMigrationsOnStartup: "true"
       DataProtection__KeysPath: /app/App_Data/keys
       Swagger__Enabled: ${SWAGGER_ENABLED:-true}
+      # AI: "Fake" (default, no keys needed) or "Llm" (real models from Ai:Chain, with fallback).
+      Ai__Provider: ${AI_PROVIDER:-Fake}
+      Ai__Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      Ai__Groq__ApiKey: ${GROQ_API_KEY:-}
     ports:
       - "${API_HOST_PORT:-8080}:8080"
     volumes:

@@ -4,4 +4,7 @@ namespace SmartMarketingPlatform.Common.Ai;
 public sealed class AiProviderException(string code, string message) : Exception(message)
 {
     public string Code { get; } = code;
+
+    // Sent by some providers with a 429/503: how long to leave the model alone.
+    public TimeSpan? RetryAfter { get; init; }
 }

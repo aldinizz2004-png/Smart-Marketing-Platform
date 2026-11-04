@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using SmartMarketingPlatform.Common.Ai;
+using SmartMarketingPlatform.Common.Ai.Llm;
 using SmartMarketingPlatform.Common.Auth;
 using SmartMarketingPlatform.Common.Brand;
 using SmartMarketingPlatform.Common.Errors;
@@ -147,9 +148,22 @@ builder.Services.AddScoped<IKnowledgeSourceService, KnowledgeSourceService>();
 builder.Services.AddScoped<ISocialAccountService, SocialAccountService>();
 builder.Services.AddScoped<IAutomationPolicyService, AutomationPolicyService>();
 
-// AI: every call goes through IMarketingAi (Fake today) and is recorded by IAiExecutionRunner.
+// AI: every call goes through IMarketingAi and is recorded by IAiExecutionRunner.
+// Ai:Provider = Fake (tests, demos, no keys) or Llm (real models from Ai:Chain, with fallback).
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.SectionName));
-builder.Services.AddSingleton<IMarketingAi, FakeMarketingAi>();
+var aiOptions = builder.Configuration.GetSection(AiOptions.SectionName).Get<AiOptions>() ?? new AiOptions();
+if (string.Equals(aiOptions.Provider, "Llm", StringComparison.OrdinalIgnoreCase))
+{
+    var aiTimeout = TimeSpan.FromSeconds(aiOptions.TimeoutSeconds);
+    builder.Services.AddHttpClient(HttpClientNames.Gemini, c => { c.BaseAddress = new Uri(aiOptions.Gemini.BaseUrl); c.Timeout = aiTimeout; });
+    builder.Services.AddHttpClient(HttpClientNames.Groq, c => { c.BaseAddress = new Uri(aiOptions.Groq.BaseUrl); c.Timeout = aiTimeout; });
+    builder.Services.AddSingleton<ChatModelChain>();   // singleton: keeps the cooldown of failing models
+    builder.Services.AddSingleton<IMarketingAi, LlmMarketingAi>();
+}
+else
+{
+    builder.Services.AddSingleton<IMarketingAi, FakeMarketingAi>();
+}
 builder.Services.AddScoped<IAiExecutionRunner, AiExecutionRunner>();
 builder.Services.AddScoped<IMarketingContextBuilder, MarketingContextBuilder>();
 

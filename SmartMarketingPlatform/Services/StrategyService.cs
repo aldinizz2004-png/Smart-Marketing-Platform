@@ -54,7 +54,9 @@ public sealed class StrategyService(
             BusinessId = businessId,
             WindowStart = now,
             WindowEnd = now.AddDays(request.WindowDays),
-            AlgorithmVersion = $"{ai.ModelName}/{ai.PromptVersion}",
+            // The prompt/algorithm version only: with a fallback chain the model that answers is known
+            // after the call and is recorded on the linked AiExecution (ModelName).
+            AlgorithmVersion = ai.PromptVersion,
             StatusId = StatusIds.StrategyRun.Running,
             InputSummaryJson = JsonSerializer.Serialize(new
             {
